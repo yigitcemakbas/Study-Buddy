@@ -1,87 +1,45 @@
-use std::io;
-use std::env;
+mod ai_model;
+mod model_downloader;
+
+use std::io::{self,Write};
 use rand::Rng;
-use serde::{Deserialize, Serialize};
-use dotenv::dotenv;
+use ai_model::SemanticChecker;
 
-#[derive(Serialize)]
-struct GroqRequest {
-    model: String,
-    messages: Vec<Message>,
-    temperature: f32,  // Changed ; to ,
-}
-
-#[derive(Serialize, Deserialize)]
-struct Message {
-    role: String,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct GroqResponse {
-    choices: Vec<Choice>,
-}
-
-#[derive(Deserialize)]
-struct Choice {
-    message: Message,
-}
-
-fn check_answer_with_groq(client: &reqwest::blocking::Client,question: &str, answer: &str, user_answer: &str, api_key: &str) -> Result<bool, Box<dyn std::error::Error>> {
-    let prompt = format!(
-        "Question: {}\n\nCorrect answer: {}\n\nUser's answer: {}\n\nIs the user's answer semantically correct? Does it convey the same meaning as the correct answer, even if worded differently? Respond with ONLY 'YES' or 'NO'.",
-        question, answer, user_answer
-    );
-
-    let request_body = GroqRequest {
-        model: "llama-3.3-70b-versatile".to_string(),
-        messages: vec![
-            Message {
-                role: "system".to_string(),
-                content: "You are a precise grading assistant. Judge answers with extreme academic strictness. Only respond with 'YES' or 'NO'.".to_string(),
-            },
-            Message {
-                role: "user".to_string(),
-                content: prompt,
-            },
-        ],
-        temperature: 0.1,
-    };
-
-    let response = client
-        .post("https://api.groq.com/openai/v1/chat/completions")
-        .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
-        .json(&request_body)
-        .send()?;
-
-    let groq_response: GroqResponse = response.json()?;
-
-    let answer = groq_response.choices
-    .first()
-    .ok_or("No response from API")?
-    .message.content.trim().to_uppercase();
-
-    Ok(answer.contains("YES"))
-}
 
 fn main() {
-    dotenv().ok();
-
-    let api_key = env::var("GROQ_API_KEY")
-    .expect("GROQ_API_KEY must be set in .env file");
+     
+    println!("Initializing AI model...");
+    let mut checker=match SemanticChecker::load(){
+        Ok(checker)=>checker,
+        Err(e)=>{
+        eprintln!("\nFailed to load model: {}",e);
+        eprintln!("\nPossible issues:");
+        eprintln!("     1. No internet (needed for first-time download)");
+        eprintln!("     2. GitHub is unreachable");
+        eprintln!("     3. Insufficient disk space (~25MB required)\n");
+        return;
+        }
+    };
 
     let mut arr = Vec::new();
 
     println!("\n-----------------------------------------");
     println!("\n Enter 'done' to start testing yourself.");
     println!("\n-----------------------------------------");
+    
+
+
+    
     // Input loop
     loop {
+
+
+
         let mut question = String::new();
         let mut answer = String::new();
 
         println!("\nEnter your question: ");
+        io::stdout().flush().unwrap();
         io::stdin().read_line(&mut question).expect("Failed to read line.");
 
         let question = question.trim();
@@ -89,15 +47,30 @@ fn main() {
             break;
         }
 
-        println!("Enter your answer: ");
+        if question.is_empty(){
+            continue;
+        }
+
+        println!("Enter the answer: ");
+        io::stdout().flush().unwrap();
         io::stdin().read_line(&mut answer).expect("Failed to read line.");
         let answer = answer.trim();
+        if answer.is_empty(){
+        continue;
+        }
 
         arr.push((question.to_string(), answer.to_string()));
         println!("Added! Question count: {}", arr.len());
     }
 
-    let client = reqwest::blocking::Client::new();
+    if arr.is_empty(){
+        println!("No questions available.");
+        return;
+    }
+
+    let mut rng = rand::thread_rng();
+
+    let threshold=0.60;
 
     loop {
         if arr.is_empty() {
@@ -105,7 +78,7 @@ fn main() {
             break;
         }
 
-        let random_index = rand::rng().random_range(0..arr.len());  // Updated method name
+        let random_index = rng.gen_range(0..arr.len());
         let (question, answer) = &arr[random_index];
 
         println!("\n------------------------------");
@@ -113,6 +86,7 @@ fn main() {
 
         let mut user_answer = String::new();
         println!("Your answer (or type 'quit' to exit): ");
+        io::stdout().flush().unwrap();
         io::stdin().read_line(&mut user_answer).expect("Failed to read line.");
 
         let user_answer = user_answer.trim();
@@ -120,13 +94,24 @@ fn main() {
             break;
         }
 
+
+        if user_answer.is_empty(){
+            continue;
+        }
+
         println!("Checking...");
-        match check_answer_with_groq(&client, question, answer, user_answer,&api_key) {
-            Ok(is_correct) => {
-                if is_correct {
-                    println!("Correct! Your answer is semantically accurate.");
-                } else {
-                    println!("Incorrect. Expected answer: {}", answer);
+        io::stdout().flush().unwrap();
+
+        match checker.check_similarity(answer,user_answer,threshold){
+            Ok((is_correct,similarity))=>{
+                let percentage=(similarity*100.0).round() as i32;
+
+                if is_correct{
+                println!("Correct! (Similarity: {}%)",percentage);
+                }
+                else{
+                println!("Incorrect. (Similarity: {}%)",percentage);
+                println!("Expected answer: {}",answer);
                 }
             }
             Err(e) => {

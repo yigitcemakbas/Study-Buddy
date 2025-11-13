@@ -1,2 +1,11 @@
 /target
 .env
+Cargo.lock
+
+model/*.onnx
+model/*.json
+
+.vscode/
+
+.DS_Store
+Thumbs.db
