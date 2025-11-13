@@ -1,16 +1,15 @@
 # Simple Command-Line Study Tool
-A command-line study tool built in Rust to help with memorization. Instead of requiring exact text matches, it uses Groq's Llama AI model to check if your answer is semantically correct.
+A fast and straightforward command-line study tool built in Rust to help with memorization. Instead of requiring exact text matches, it uses a custom trained AI model to check if your answer is semantically correct.
 
 ## Setup
 **Requirements:**
 - Rust installed
-- Groq API key (free at console.groq.com)
+- ~30 MB disk space for AI model
 
 **Install:**
 ```bash
-git clone https://github.com/yigitcemakbas/studytool.git
-cd studytool
-echo "GROQ_API_KEY=your_key_here" > .env
+git clone https://github.com/yigitcemakbas/Simple-Study-Tool.git
+cd Simple-Study-Tool
 cargo build --release
 ```
 
@@ -25,19 +24,30 @@ cargo run
 4. Type 'quit' to exit.
 
 ## How it works
-The program sends the user's answer and the original correct answer to Groq's API as parameters, which then determines if they mean the same thing. If the API call fails the program falls back to exact character-by-character matching.
-The questions are given to the user in a random order to better aid with memorization.
+The program uses a custom-trained siamese transformer model (ONNX format) that:
+
+1. Tokenizes both the correct answer and user's answer
+2. Encodes them into semantic embeddings
+3. Computes cosine similarity between embeddings
+4. Accepts answers above 75% similarity threshold
+5. The model automatically downloads from GitHub Releases on first run (~25 MB).
+
+If the AI model fails to load, the program falls back to exact string matching.
+
+## Model Details
+- Architecture: Siamese Transformer (BERT-based)
+- Training: Custom-trained on semantic similarity datasets
+- Format: ONNX for cross-platform compatibility
+- Size: ~25 MB (model + tokenizer config)
+- Inference: CPU-optimized, ~5-20ms per check
 
 ## Dependencies
 
+- `ort` - ONNX Runtime for Rust
+- `ndarray` - N-dimensional arrays for tensor operations
 - `rand` - random question selection
 - `reqwest` - HTTP requests
-- `serde/serde_json` - JSON handling
-- `dotenv` - environment variables
-
-## Security
-
-API key stored in `.env` (gitignored). Don't commit your `.env` file.
+- `serde/serde_json` - JSON handling and configuration parsing
 
 ## License
 
